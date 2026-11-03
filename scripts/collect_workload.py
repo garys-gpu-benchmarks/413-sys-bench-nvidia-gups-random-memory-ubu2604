@@ -38,6 +38,16 @@ def parse_gups(text: str) -> dict[str, float]:
     return out
 
 
+def strip_numactl(command: list[str]) -> list[str]:
+    """Drop a leading numactl and its flags. The gups binary follows those flags."""
+    if not command or command[0] != "numactl":
+        return list(command)
+    index = 1
+    while index < len(command) and command[index].startswith("-"):
+        index += 1
+    return command[index:]
+
+
 def try_perf(command: list[str], timeout: int) -> dict[str, float]:
     if not shutil.which("perf"):
         return {}
@@ -78,17 +88,40 @@ def main() -> int:
         raise SystemExit("[FAIL] bin/gups missing")
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = str(threads)
+    affinity = str(pv(params, "thread_affinity", args.profile, "") or "").strip()
+    if affinity.lower() == "core":
+        env["OMP_PROC_BIND"] = "close"
+    numa_node = str(pv(params, "numa_node", args.profile, "0") or "").strip()
     command = ["bin/gups", str(table_size), str(updates), str(iters), str(seed)]
-    completed = subprocess.run(command, check=False, capture_output=True, text=True, env=env, timeout=3600)
+    if shutil.which("numactl") and numa_node not in {"", "none"}:
+        command = ["numactl", f"--cpunodebind={numa_node}", f"--membind={numa_node}", *command]
+    if affinity and affinity.lower() not in {"", "none", "core"} and shutil.which("numactl"):
+        bind = affinity.split(":", 1)[1] if affinity.lower().startswith("node:") else affinity
+        flag = "--cpunodebind" if affinity.lower().startswith("node:") else "--physcpubind"
+        if command[0] == "numactl":
+            command.insert(1, f"{flag}={bind}")
+        else:
+            command = ["numactl", f"{flag}={bind}", *command]
+    ran = command
+    completed = subprocess.run(ran, check=False, capture_output=True, text=True, env=env, timeout=3600)
     text = (completed.stdout or "") + "\n" + (completed.stderr or "")
+    # Containers often have numactl installed and no NUMA policy. The workbook
+    # still names node 0; the score is the gups run, so retry without the bind.
+    if ran and ran[0] == "numactl" and "does not support NUMA" in text:
+        ran = strip_numactl(ran)
+        completed = subprocess.run(ran, check=False, capture_output=True, text=True, env=env, timeout=3600)
+        text = (completed.stdout or "") + "\n" + (completed.stderr or "")
     (run_dir / "gups.txt").write_text(text, encoding="utf-8")
     parsed = parse_gups(text)
     if completed.returncode != 0 or "gups" not in parsed:
         raise SystemExit(f"[FAIL] gups did not report a score: {text[-400:]}")
-    perf_counts = try_perf(command, 3600)
+    perf_counts = try_perf(ran, 3600)
     instructions = perf_counts.get("instructions", 0.0)
-    tlb = (1000.0 * perf_counts["dtlb-load-misses"] / instructions) if instructions and "dtlb-load-misses" in perf_counts else ""
-    l3 = (100.0 * perf_counts["cache-misses"] / instructions) if instructions and "cache-misses" in perf_counts else ""
+    pmu_na = "na (expected: PMU access denied)"
+    tlb_measured = bool(instructions and "dtlb-load-misses" in perf_counts)
+    l3_measured = bool(instructions and "cache-misses" in perf_counts)
+    tlb = (1000.0 * perf_counts["dtlb-load-misses"] / instructions) if tlb_measured else pmu_na
+    l3 = (100.0 * perf_counts["cache-misses"] / instructions) if l3_measured else pmu_na
     row = {
         "status": "ok",
         "giga_updates_score": parsed["gups"],
@@ -100,8 +133,8 @@ def main() -> int:
         "num_threads": threads,
         "num_iterations_ran": iters,
         "num_iterations_requested": requested,
-        "microarch_measured": 1 if tlb != "" else 0,
-        "error_message": "" if tlb != "" else "perf TLB/L3 not measured",
+        "microarch_measured": 1 if tlb_measured else 0,
+        "error_message": "" if tlb_measured else "perf TLB/L3 not measured",
     }
     header = [
         "sample_index", "status", "giga_updates_score", "tlb_miss_rate", "l3_cache_miss_rate",
