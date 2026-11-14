@@ -3,7 +3,7 @@
 **Main goal:** Measure random 64-bit memory update performance  
 **Tools:** Compile gups.c; run bin/gups; optionally wrap with perf stat -e dTLB-load-misses,cache-misses,instructions
 
-Reference results measured by the maintainer on the system shown in each section (generator TEMPLATE_00_139 · recorded 2026-11-13). Your own runs write `results/RESULTS_ACTUAL.md` in the same format.
+Reference results measured by the maintainer on the system shown in each section (generator TEMPLATE_00_140 · recorded 2026-11-13). Your own runs write `results/RESULTS_ACTUAL.md` in the same format.
 
 > Smoke runs use deliberately small sizes. They check that the workload installs and runs end to end; their numbers are not performance results. Baseline and extended are.
 
@@ -11,14 +11,14 @@ Reference results measured by the maintainer on the system shown in each section
 ## smoke
 
 - **System:** 1× NVIDIA H100 PCIe (81559 MiB) · Intel(R) Xeon(R) Platinum 8352Y CPU @ 2.20GHz · Ubuntu 26.04.1 LTS · kernel 6.8.0-138-generic · driver 595.91.07
-- **Run:** 2026-11-13T14:07:46Z · status **PASS** (exit 0)
-- **Time (mm:ss):** setup 00:47 · benchmark 00:01 · whole run 00:59
-- **Source:** run 413_20261113_140746
+- **Run:** 2026-11-13T20:39:32Z · status **PASS** (exit 0)
+- **Time (mm:ss):** setup 00:51 · benchmark 00:01 · whole run 01:05
+- **Source:** run 413_20261113_203932
 - **Command:** `bash run_benchmark.sh --smoke --numa-node 0 --num-threads 1 --thread-affinity node:0 --table-size 4194304 --num-updates 1000000 --num-iterations 1 --seed 42`
 
 | # | Metric | Result |
 |---|---|---|
-| 1 | Giga-updates score (giga_updates_score) | 0.025705 |
-| 2 | Random 64-bit update rate (updates_sec) | 25704630.100477 |
-| 3 | 8-byte payload update rate, GB/s (payload_update_gb_s) | 0.20563704080381598 |
+| 1 | Giga-updates score (giga_updates_score) | 0.02455 |
+| 2 | Random 64-bit update rate (updates_sec) | 24550313.744417 |
+| 3 | 8-byte payload update rate, GB/s (payload_update_gb_s) | 0.196402509955336 |
 <!-- /profile:smoke -->
